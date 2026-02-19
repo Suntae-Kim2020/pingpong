@@ -47,6 +47,7 @@ export interface Member {
   id: number;
   club_id: number;
   name: string;
+  profile_image: string | null;
   birth_year: number;
   gender: 'M' | 'F';
   phone: string | null;
@@ -56,6 +57,7 @@ export interface Member {
   pimple_type: PimpleType;    // 핌플 타입 (none, short, long)
   spouse_id: number | null;
   is_active: boolean;
+  check_flag?: boolean;       // 출석체크 플래그 (현재 탁장에 있는지)
   created_at: Date;
 }
 
@@ -290,7 +292,7 @@ export interface AuthUser {
   role: SystemRole;
 }
 
-export type SocialProvider = 'naver' | 'kakao' | 'google';
+export type SocialProvider = 'naver' | 'kakao' | 'google' | 'local';
 export type RegionLevel = 'nation' | 'province' | 'city' | 'district' | 'town';
 export type ClubJoinType = 'open' | 'approval' | 'invite';
 export type ClubMemberRole = 'leader' | 'admin' | 'member';
@@ -300,6 +302,8 @@ export interface User {
   id: number;
   provider: SocialProvider;
   provider_id: string;
+  username: string | null;
+  password?: string;
   email: string | null;
   name: string;
   nickname: string | null;
@@ -366,6 +370,44 @@ export interface ClubSearchResult extends ClubExtended {
   leader_name: string | null;
 }
 
+export type NotificationType = 'announcement' | 'schedule' | 'video' | 'join_approved' | 'join_rejected';
+
+export interface Notification {
+  id: number;
+  user_id: number;
+  club_id: number | null;
+  title: string;
+  body: string | null;
+  type: NotificationType;
+  is_read: boolean;
+  reference_id: number | null;
+  created_by: number | null;
+  created_at: Date;
+}
+
+export interface NotificationWithClub extends Notification {
+  club_name: string | null;
+}
+
+export interface ClubInvite {
+  id: number;
+  club_id: number;
+  token: string;
+  created_by: number;
+  expires_at: Date;
+  max_uses: number | null;
+  use_count: number;
+  is_active: boolean;
+  created_at: Date;
+}
+
+export interface MembershipWithUser extends ClubMembership {
+  user_name: string;
+  user_nickname: string | null;
+  user_profile_image: string | null;
+  user_email: string | null;
+}
+
 // YouTube 영상
 export type VideoType = 'shorts' | 'video';
 
@@ -392,4 +434,220 @@ export interface UpdateYouTubeVideoRequest {
   title?: string;
   display_order?: number;
   is_active?: boolean;
+}
+
+// =============================================
+// 개인 전적 / 클럽 랭킹
+// =============================================
+
+export interface PlayerOverallStats {
+  member_id: number;
+  member_name: string;
+  local_busu: number | null;
+  open_busu: number | null;
+  play_style: PlayStyle;
+  pimple_type: PimpleType;
+  match_wins: number;
+  match_losses: number;
+  sets_won: number;
+  sets_lost: number;
+  tournament_wins: number;
+  tournament_losses: number;
+}
+
+export interface PlayerMeetingStats {
+  meeting_id: number;
+  year: number;
+  month: number;
+  meeting_name: string | null;
+  wins: number;
+  losses: number;
+  sets_won: number;
+  sets_lost: number;
+}
+
+export interface PlayerHeadToHead {
+  opponent_id: number;
+  opponent_name: string;
+  wins: number;
+  losses: number;
+}
+
+export interface PlayerTournamentResult {
+  meeting_id: number;
+  year: number;
+  month: number;
+  meeting_name: string | null;
+  division: TournamentDivision;
+  placement: string;
+}
+
+export interface ClubRankingEntry {
+  member_id: number;
+  member_name: string;
+  local_busu: number | null;
+  open_busu: number | null;
+  play_style: PlayStyle;
+  total_wins: number;
+  total_losses: number;
+  win_rate: number;
+}
+
+// =============================================
+// 출석체크
+// =============================================
+
+export interface CheckHistory {
+  id: number;
+  club_id: number;
+  member_id: number;
+  helper_member_id: number;
+  check_date: string;  // YYYYMMDD
+  created_at: Date;
+}
+
+export interface AttendanceNotice {
+  id: number;
+  club_id: number;
+  member_id: number;
+  attend_date: string;
+  start_time: string | null;
+  end_time: string | null;
+  departure_time: string | null;
+  message: string | null;
+  created_at: Date;
+}
+
+export interface AttendanceNoticeWithMember extends AttendanceNotice {
+  member_name: string;
+  like_count: number;
+  comment_count: number;
+  liked?: boolean;
+}
+
+export interface AttendanceComment {
+  id: number;
+  notice_id: number;
+  member_id: number;
+  member_name: string;
+  message: string;
+  like_count: number;
+  liked?: boolean;
+  created_at: Date;
+}
+
+export interface AttendanceLike {
+  id: number;
+  target_type: 'notice' | 'comment';
+  target_id: number;
+  member_id: number;
+  created_at: Date;
+}
+
+export interface AttendanceStats {
+  topAttenders: { member_id: number; member_name: string; count: number }[];
+  topHelpers: { member_id: number; member_name: string; count: number }[];
+}
+
+// =============================================
+// 게임방 (기록경기)
+// =============================================
+
+export type GameRoomStatus = 'open' | 'assigning' | 'assigned' | 'recording' | 'completed' | 'deleted';
+
+export interface GameRoom {
+  id: number;
+  club_id: number;
+  creator_member_id: number;
+  name: string;
+  game_date: string | null;
+  game_time: string | null;
+  match_type: MatchType;
+  group_count: number;
+  match_format: number;
+  team_size: number;
+  status: GameRoomStatus;
+  created_at: Date;
+}
+
+export interface GameRoomWithCreator extends GameRoom {
+  creator_name: string;
+  applicant_count: number;
+}
+
+export interface GameRoomApplicant {
+  id: number;
+  room_id: number;
+  member_id: number;
+  added_by_admin: number;
+  created_at: Date;
+}
+
+export interface GameRoomApplicantWithMember extends GameRoomApplicant {
+  member_name: string;
+  open_busu: number | null;
+  gender: string;
+  pimple_type: PimpleType;
+  spouse_id: number | null;
+}
+
+export interface GameRoomGroupMember {
+  member_id: number;
+  member_name: string;
+  open_busu: number | null;
+  group_number: number;
+  display_order: number;
+}
+
+export interface GameRoomMatch {
+  group_number: number;
+  player1_id: number;
+  player2_id: number;
+  player1_score: number;
+  player2_score: number;
+}
+
+export interface GameRoomTeamMatch {
+  team1_number: number;
+  team2_number: number;
+  team1_score: number;
+  team2_score: number;
+}
+
+export interface GameRoomDetail extends GameRoom {
+  creator_name: string;
+  applicants: GameRoomApplicantWithMember[];
+  groups: Record<number, GameRoomGroupMember[]>;
+  matches: GameRoomMatch[];
+  teamMatches: GameRoomTeamMatch[];
+}
+
+// =============================================
+// 누적경기기록
+// =============================================
+
+export interface CumulativeMatch {
+  id: number;
+  club_id: number;
+  recorder_member_id: number;
+  player1_id: number;
+  player2_id: number;
+  player1_score: number;
+  player2_score: number;
+  match_date: string;
+  memo: string | null;
+  created_at: Date;
+}
+
+export interface CumulativeMatchWithNames extends CumulativeMatch {
+  player1_name: string;
+  player2_name: string;
+  recorder_name: string;
+}
+
+export interface CumulativeMatchStats {
+  opponent_id: number;
+  opponent_name: string;
+  wins: number;
+  losses: number;
 }

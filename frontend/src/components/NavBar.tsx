@@ -1,12 +1,30 @@
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { notificationsApi } from '../api/notifications';
 
 export default function NavBar() {
-  const { user, isAuthenticated, isAdmin, logout } = useAuth();
+  const { user, isAuthenticated, isAdmin, activeClubId, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setUnreadCount(0);
+      return;
+    }
+    const fetchCount = () => {
+      notificationsApi.getUnreadCount()
+        .then((data) => setUnreadCount(data.count))
+        .catch(() => {});
+    };
+    fetchCount();
+    pollRef.current = setInterval(fetchCount, 60000);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [isAuthenticated]);
 
   const isActive = (path: string) => location.pathname === path;
 
@@ -62,25 +80,80 @@ export default function NavBar() {
         >
           <NavItem label="홈으로" active={isActive('/')} onClick={() => handleNav('/')} />
           <NavItem label="클럽찾기" active={isActive('/clubs')} onClick={() => handleNav('/clubs')} />
-          <NavItem label="새경기생성" onClick={() => handleNav('/?create=1')} />
+          {isAuthenticated && (
+            <NavItem label="내클럽" active={isActive('/my-clubs')} onClick={() => handleNav('/my-clubs')} />
+          )}
+          <NavItem label="랭킹" active={isActive('/ranking')} onClick={() => handleNav('/ranking')} />
+          <NavItem label="룰렛" active={isActive('/roulette')} onClick={() => handleNav('/roulette')} />
+          {isAuthenticated && activeClubId && (
+            <NavItem
+              label="출석"
+              active={location.pathname.includes('/attendance')}
+              onClick={() => handleNav(`/clubs/${activeClubId}/attendance`)}
+            />
+          )}
+          {isAuthenticated && activeClubId && (
+            <NavItem
+              label="게임기록"
+              active={location.pathname === '/game-record' || location.pathname.includes('/cumulative-matches') || location.pathname.includes('/game-rooms')}
+              onClick={() => handleNav('/game-record')}
+            />
+          )}
           {isAdmin && (
             <NavItem label="영상관리" active={isActive('/admin/videos')} onClick={() => handleNav('/admin/videos')} />
+          )}
+
+          {isAuthenticated && (
+            <button
+              onClick={() => handleNav('/notifications')}
+              style={{
+                background: isActive('/notifications') ? 'rgba(255,255,255,0.15)' : 'transparent',
+                border: 'none', color: 'white', cursor: 'pointer', padding: '6px 10px',
+                borderRadius: '4px', fontSize: '16px', position: 'relative',
+              }}
+            >
+              &#128276;
+              {unreadCount > 0 && (
+                <span style={{
+                  position: 'absolute', top: '2px', right: '2px',
+                  background: '#f44336', color: 'white', fontSize: '10px',
+                  borderRadius: '50%', width: '16px', height: '16px',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontWeight: '700',
+                }}>
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </button>
           )}
 
           <div style={{ width: '1px', height: '24px', background: 'rgba(255,255,255,0.3)', margin: '0 8px' }} />
 
           {isAuthenticated && user ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              {user.profile_image && (
-                <img
-                  src={user.profile_image}
-                  alt={user.name}
-                  style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }}
-                />
-              )}
-              <span style={{ fontSize: '14px', maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {user.nickname || user.name}
-              </span>
+              <div
+                onClick={() => handleNav('/profile')}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}
+                title="내 프로필"
+              >
+                {user.profile_image ? (
+                  <img
+                    src={user.profile_image}
+                    alt={user.name}
+                    style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }}
+                  />
+                ) : (
+                  <div style={{
+                    width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(255,255,255,0.3)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px',
+                  }}>
+                    {(user.nickname || user.name).charAt(0)}
+                  </div>
+                )}
+                <span style={{ fontSize: '14px', maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {user.nickname || user.name}
+                </span>
+              </div>
               <NavItem label="로그아웃" onClick={handleLogout} />
             </div>
           ) : (
@@ -120,9 +193,34 @@ export default function NavBar() {
         >
           <MobileNavItem label="홈으로" active={isActive('/')} onClick={() => handleNav('/')} />
           <MobileNavItem label="클럽찾기" active={isActive('/clubs')} onClick={() => handleNav('/clubs')} />
-          <MobileNavItem label="새경기생성" onClick={() => handleNav('/?create=1')} />
+          {isAuthenticated && (
+            <MobileNavItem label="내클럽" active={isActive('/my-clubs')} onClick={() => handleNav('/my-clubs')} />
+          )}
+          <MobileNavItem label="랭킹" active={isActive('/ranking')} onClick={() => handleNav('/ranking')} />
+          <MobileNavItem label="룰렛" active={isActive('/roulette')} onClick={() => handleNav('/roulette')} />
+          {isAuthenticated && activeClubId && (
+            <MobileNavItem
+              label="출석"
+              active={location.pathname.includes('/attendance')}
+              onClick={() => handleNav(`/clubs/${activeClubId}/attendance`)}
+            />
+          )}
+          {isAuthenticated && activeClubId && (
+            <MobileNavItem
+              label="게임기록"
+              active={location.pathname === '/game-record' || location.pathname.includes('/cumulative-matches') || location.pathname.includes('/game-rooms')}
+              onClick={() => handleNav('/game-record')}
+            />
+          )}
           {isAdmin && (
             <MobileNavItem label="영상관리" active={isActive('/admin/videos')} onClick={() => handleNav('/admin/videos')} />
+          )}
+          {isAuthenticated && (
+            <MobileNavItem
+              label={`알림${unreadCount > 0 ? ` (${unreadCount})` : ''}`}
+              active={isActive('/notifications')}
+              onClick={() => handleNav('/notifications')}
+            />
           )}
           <div style={{ height: '1px', background: 'rgba(255,255,255,0.2)', margin: '6px 0' }} />
           {isAuthenticated && user ? (
@@ -137,6 +235,7 @@ export default function NavBar() {
                 )}
                 {user.nickname || user.name}
               </div>
+              <MobileNavItem label="내 정보" active={isActive('/profile')} onClick={() => handleNav('/profile')} />
               <MobileNavItem label="로그아웃" onClick={handleLogout} />
             </>
           ) : (
