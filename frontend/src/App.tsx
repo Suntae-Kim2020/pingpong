@@ -7,7 +7,7 @@ import ResultPage from './pages/ResultPage';
 import TournamentPage from './pages/TournamentPage';
 import LoginPage from './pages/LoginPage';
 import AuthCallbackPage from './pages/AuthCallbackPage';
-import ClubSearchPage from './pages/ClubSearchPage';
+import SearchPage from './pages/SearchPage';
 import VideoManagePage from './pages/VideoManagePage';
 import PlayerStatsPage from './pages/PlayerStatsPage';
 import RankingPage from './pages/RankingPage';
@@ -22,7 +22,13 @@ import RoulettePage from './pages/RoulettePage';
 import GameRoomPage from './pages/GameRoomPage';
 import GameRecordPage from './pages/GameRecordPage';
 import CumulativeMatchPage from './pages/CumulativeMatchPage';
+import MonthlyRecordPage from './pages/MonthlyRecordPage';
+import MonthlyAwardsPage from './pages/MonthlyAwardsPage';
+import FeeManagePage from './pages/FeeManagePage';
 import SignupPage from './pages/SignupPage';
+import OrgManagePage from './pages/OrgManagePage';
+import OrgInvitePage from './pages/OrgInvitePage';
+import OrgFeeManagePage from './pages/OrgFeeManagePage';
 
 function App() {
   return (
@@ -34,7 +40,9 @@ function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
           <Route path="/auth/:provider/callback" element={<AuthCallbackPage />} />
-          <Route path="/clubs" element={<ClubSearchPage />} />
+          <Route path="/search" element={<SearchPage />} />
+          <Route path="/clubs" element={<Navigate to="/search?tab=club" replace />} />
+          <Route path="/orgs" element={<Navigate to="/search?tab=all" replace />} />
           <Route path="/my-clubs" element={<MyClubsPage />} />
           <Route path="/clubs/:id/manage" element={<ClubManagePage />} />
           <Route path="/clubs/invite/:token" element={<InvitePage />} />
@@ -51,7 +59,13 @@ function App() {
           <Route path="/roulette" element={<RoulettePage />} />
           <Route path="/game-record" element={<GameRecordPage />} />
           <Route path="/clubs/:clubId/cumulative-matches" element={<CumulativeMatchPage />} />
+          <Route path="/clubs/:clubId/monthly-record" element={<MonthlyRecordPage />} />
+          <Route path="/clubs/:clubId/monthly-awards" element={<MonthlyAwardsPage />} />
           <Route path="/clubs/:clubId/game-rooms" element={<GameRoomPage />} />
+          <Route path="/clubs/:clubId/fees" element={<FeeManagePage />} />
+          <Route path="/orgs/:id/manage" element={<OrgManagePage />} />
+          <Route path="/orgs/:id/fees" element={<OrgFeeManagePage />} />
+          <Route path="/orgs/invite/:token" element={<OrgInvitePage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AuthProvider>

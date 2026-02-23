@@ -69,6 +69,7 @@ export interface Member {
   id: number;
   club_id: number;
   name: string;
+  profile_image: string | null;
   birth_year: number;
   gender: 'M' | 'F';
   phone: string | null;
@@ -78,6 +79,7 @@ export interface Member {
   pimple_type: PimpleType;    // 핌플 타입 (none, short, long)
   spouse_id: number | null;
   is_active: boolean;
+  check_flag?: boolean;       // 출석체크 플래그
   created_at: Date;
 }
 
@@ -301,6 +303,68 @@ export const PLAY_STYLE_LABELS: Record<PlayStyle, string> = {
   '올라운드': '올라운드',
 };
 
+// 통합 엔티티 (클럽/조직)
+export type EntityType = 'club' | 'org';
+
+export interface ActiveEntity {
+  type: EntityType;
+  id: number;
+  name: string;
+  role: 'leader' | 'admin' | 'member';
+  orgType?: OrgType; // type==='org'일 때만
+}
+
+// 클럽 멤버 역할/상태
+export type ClubMemberRole = 'leader' | 'admin' | 'member';
+export type ClubMemberStatus = 'pending' | 'approved' | 'rejected' | 'banned';
+
+// 조직 (시군구/시도/중앙단체)
+export type OrgType = 'city_district' | 'province' | 'national';
+export const ORG_TYPE_LABELS: Record<OrgType, string> = {
+  city_district: '시군구',
+  province: '시도',
+  national: '중앙단체',
+};
+export type OrgMemberRole = 'leader' | 'admin' | 'member';
+export type OrgMemberStatus = 'pending' | 'approved' | 'rejected' | 'banned';
+
+export interface OrgMembershipWithUser {
+  id: number;
+  org_id: number;
+  user_id: number;
+  role: OrgMemberRole;
+  status: OrgMemberStatus;
+  display_name: string | null;
+  joined_at: string;
+  approved_at: string | null;
+  approved_by: number | null;
+  user_name: string;
+  user_nickname: string | null;
+  user_profile_image: string | null;
+  user_email: string | null;
+  org_name: string | null;
+}
+
+export interface MembershipWithUser {
+  id: number;
+  club_id: number;
+  user_id: number;
+  member_id: number | null;
+  role: ClubMemberRole;
+  status: ClubMemberStatus;
+  display_name: string | null;
+  joined_at: string;
+  approved_at: string | null;
+  approved_by: number | null;
+  user_name: string;
+  user_nickname: string | null;
+  user_profile_image: string | null;
+  user_email: string | null;
+  member_gender: 'M' | 'F' | null;
+  member_open_busu: number | null;
+  club_name: string | null;
+}
+
 // 시스템 역할
 export type SystemRole = 'super_admin' | 'admin' | 'user';
 
@@ -315,5 +379,257 @@ export interface YouTubeVideo {
   title: string;
   display_order: number;
   is_active: boolean;
+  club_id: number | null;
+  org_id: number | null;
+  uploaded_by: number | null;
+  club_name?: string;
+  org_name?: string;
+  created_at: string;
+}
+
+// =============================================
+// 개인 전적 / 클럽 랭킹
+// =============================================
+
+export interface PlayerOverallStats {
+  member_id: number;
+  member_name: string;
+  local_busu: number | null;
+  open_busu: number | null;
+  play_style: PlayStyle;
+  pimple_type: PimpleType;
+  match_wins: number;
+  match_losses: number;
+  sets_won: number;
+  sets_lost: number;
+  tournament_wins: number;
+  tournament_losses: number;
+}
+
+export interface PlayerMeetingStats {
+  meeting_id: number;
+  year: number;
+  month: number;
+  meeting_name: string | null;
+  wins: number;
+  losses: number;
+  sets_won: number;
+  sets_lost: number;
+}
+
+export interface PlayerHeadToHead {
+  opponent_id: number;
+  opponent_name: string;
+  wins: number;
+  losses: number;
+}
+
+export interface PlayerTournamentResult {
+  meeting_id: number;
+  year: number;
+  month: number;
+  meeting_name: string | null;
+  division: TournamentDivision;
+  placement: string;
+}
+
+export interface ClubRankingEntry {
+  member_id: number;
+  member_name: string;
+  local_busu: number | null;
+  open_busu: number | null;
+  play_style: PlayStyle;
+  total_wins: number;
+  total_losses: number;
+  win_rate: number;
+}
+
+// =============================================
+// 출석체크
+// =============================================
+
+export interface MemberWithCheck extends Member {
+  check_flag: boolean;
+}
+
+export interface AttendanceNoticeWithMember {
+  id: number;
+  club_id: number;
+  member_id: number;
+  member_name: string;
+  attend_date: string;
+  start_time: string | null;
+  end_time: string | null;
+  departure_time: string | null;
+  message: string | null;
+  like_count: number;
+  comment_count: number;
+  liked?: boolean;
+  created_at: string;
+}
+
+export interface AttendanceComment {
+  id: number;
+  notice_id: number;
+  member_id: number;
+  member_name: string;
+  message: string;
+  like_count: number;
+  liked?: boolean;
+  created_at: string;
+}
+
+export interface AttendanceStats {
+  topAttenders: { member_id: number; member_name: string; count: number }[];
+  topHelpers: { member_id: number; member_name: string; count: number }[];
+}
+
+// =============================================
+// 회비관리
+// =============================================
+
+export interface FeePolicy {
+  id: number;
+  club_id: number;
+  amount: number;
+  bank_name: string | null;
+  account_number: string | null;
+  account_holder: string | null;
+  kakao_pay_link: string | null;
+  description: string | null;
+}
+
+export interface FeeRecord {
+  id: number;
+  club_id: number;
+  member_id: number;
+  member_name: string;
+  profile_image: string | null;
+  year: number;
+  month: number;
+  amount: number;
+  paid_at: string;
+  confirmed_by: number | null;
+  memo: string | null;
+}
+
+// =============================================
+// 각종회비
+// =============================================
+
+export interface SpecialFee {
+  id: number;
+  club_id: number;
+  name: string;
+  amount: number;
+  description: string | null;
+  due_date: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface SpecialFeeRecord {
+  id: number;
+  special_fee_id: number;
+  club_id: number;
+  member_id: number;
+  member_name: string;
+  profile_image: string | null;
+  amount: number;
+  paid_at: string;
+  confirmed_by: number | null;
+  memo: string | null;
+}
+
+// =============================================
+// 수입/지출
+// =============================================
+
+export type TransactionType = 'income' | 'expense';
+
+export interface FinanceTransaction {
+  id: number;
+  club_id: number;
+  type: TransactionType;
+  category: string;
+  amount: number;
+  description: string | null;
+  transaction_date: string;
+  recorded_by: number | null;
+  recorded_by_name: string | null;
+  created_at: string;
+}
+
+export interface TransactionSummary {
+  total_income: number;
+  total_expense: number;
+  balance: number;
+}
+
+// =============================================
+// 조직 회비관리
+// =============================================
+
+export interface OrgFeePolicy {
+  id: number;
+  org_id: number;
+  amount: number;
+  bank_name: string | null;
+  account_number: string | null;
+  account_holder: string | null;
+  kakao_pay_link: string | null;
+  description: string | null;
+}
+
+export interface OrgFeeRecord {
+  id: number;
+  org_id: number;
+  user_id: number;
+  user_name: string;
+  user_nickname: string | null;
+  profile_image: string | null;
+  year: number;
+  month: number;
+  amount: number;
+  paid_at: string;
+  confirmed_by: number | null;
+  memo: string | null;
+}
+
+export interface OrgSpecialFee {
+  id: number;
+  org_id: number;
+  name: string;
+  amount: number;
+  description: string | null;
+  due_date: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface OrgSpecialFeeRecord {
+  id: number;
+  special_fee_id: number;
+  org_id: number;
+  user_id: number;
+  user_name: string;
+  user_nickname: string | null;
+  profile_image: string | null;
+  amount: number;
+  paid_at: string;
+  confirmed_by: number | null;
+  memo: string | null;
+}
+
+export interface OrgFinanceTransaction {
+  id: number;
+  org_id: number;
+  type: TransactionType;
+  category: string;
+  amount: number;
+  description: string | null;
+  transaction_date: string;
+  recorded_by: number | null;
+  recorded_by_name: string | null;
   created_at: string;
 }
