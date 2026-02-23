@@ -187,6 +187,16 @@ export default function OrgManagePage() {
         </button>
         <h1 style={{ fontSize: '22px', margin: 0, flex: 1 }}>{org.name} 관리</h1>
         <button
+          onClick={() => navigate('/admin/videos')}
+          style={{
+            background: '#6a1b9a', color: 'white', border: 'none',
+            padding: '8px 16px', borderRadius: '6px', cursor: 'pointer',
+            fontSize: '13px', fontWeight: '600',
+          }}
+        >
+          영상관리
+        </button>
+        <button
           onClick={() => navigate(`/orgs/${orgId}/fees`)}
           style={{
             background: '#1976d2', color: 'white', border: 'none',
