@@ -47,11 +47,11 @@ function MeetingPage() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [meetingData, membersData, applicantsData] = await Promise.all([
+      const [meetingData, applicantsData] = await Promise.all([
         meetingsApi.getById(meetingId),
-        membersApi.getAll(),
         meetingsApi.getApplicants(meetingId),
       ]);
+      const membersData = await membersApi.getAll(meetingData.club_id);
       setMeeting(meetingData);
       setMembers(membersData);
       setApplicants(applicantsData);
@@ -219,13 +219,52 @@ function MeetingPage() {
                 {meeting.match_type === 'individual' && !!meeting.has_lower_tournament && <span className="badge badge-warning">패자부 토너먼트</span>}
               </div>
             </div>
-            <div>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               {meeting.status === 'recording' && (
+                <>
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => {
+                      if (window.confirm('조편성 단계로 돌아가시겠습니까?')) {
+                        handleStatusChange('assigned');
+                      }
+                    }}
+                    style={{ fontSize: '13px' }}
+                  >
+                    이전 단계로
+                  </button>
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => navigate(`/meeting/${meetingId}/result`)}
+                  >
+                    경기 기록
+                  </button>
+                </>
+              )}
+              {meeting.status === 'tournament' && (
                 <button
-                  className="btn btn-primary"
-                  onClick={() => navigate(`/meeting/${meetingId}/result`)}
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    if (window.confirm('경기 기록 단계로 돌아가시겠습니까?')) {
+                      handleStatusChange('recording');
+                    }
+                  }}
+                  style={{ fontSize: '13px' }}
                 >
-                  경기 기록
+                  이전 단계로
+                </button>
+              )}
+              {meeting.status === 'assigned' && (
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    if (window.confirm('신청 접수 단계로 돌아가시겠습니까?')) {
+                      handleStatusChange('open');
+                    }
+                  }}
+                  style={{ fontSize: '13px' }}
+                >
+                  이전 단계로
                 </button>
               )}
             </div>

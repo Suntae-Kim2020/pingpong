@@ -29,6 +29,7 @@ import SignupPage from './pages/SignupPage';
 import OrgManagePage from './pages/OrgManagePage';
 import OrgInvitePage from './pages/OrgInvitePage';
 import OrgFeeManagePage from './pages/OrgFeeManagePage';
+import MeetingListPage from './pages/MeetingListPage';
 
 function App() {
   return (
@@ -48,6 +49,7 @@ function App() {
           <Route path="/clubs/invite/:token" element={<InvitePage />} />
           <Route path="/notifications" element={<NotificationPage />} />
           <Route path="/admin/videos" element={<VideoManagePage />} />
+          <Route path="/meetings" element={<MeetingListPage />} />
           <Route path="/meeting/:id" element={<MeetingPage />} />
           <Route path="/meeting/:id/result" element={<ResultPage />} />
           <Route path="/meeting/:id/tournament" element={<TournamentPage />} />
