@@ -79,6 +79,7 @@ export interface Member {
   pimple_type: PimpleType;    // 핌플 타입 (none, short, long)
   spouse_id: number | null;
   is_active: boolean;
+  role: 'leader' | 'admin' | 'member';
   check_flag?: boolean;       // 출석체크 플래그
   created_at: Date;
 }
@@ -497,6 +498,7 @@ export interface FeePolicy {
   account_holder: string | null;
   kakao_pay_link: string | null;
   description: string | null;
+  couple_discount_rate: number; // 부부 감면 비율 (%)
 }
 
 export interface FeeRecord {
