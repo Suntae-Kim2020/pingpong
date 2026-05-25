@@ -14,20 +14,26 @@ export const feeModel = {
         kakao_pay_link VARCHAR(500),
         description TEXT,
         couple_discount_rate INT NOT NULL DEFAULT 0,
+        officer_discount_rate INT NOT NULL DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         FOREIGN KEY (club_id) REFERENCES club(id) ON DELETE CASCADE
       )
     `);
 
-    // 기존 테이블에 부부 감면 비율(%) 컬럼이 없으면 추가 (MySQL 호환 idempotent)
-    const [col] = await pool.query<DBRow[]>(
-      `SELECT COUNT(*) AS cnt FROM information_schema.columns
-       WHERE table_schema = DATABASE() AND table_name = 'fee_policy' AND column_name = 'couple_discount_rate'`
-    );
-    if ((col[0]?.cnt as number) === 0) {
-      await pool.query(`ALTER TABLE fee_policy ADD COLUMN couple_discount_rate INT NOT NULL DEFAULT 0`);
-    }
+    // 기존 테이블에 감면 비율(%) 컬럼이 없으면 추가 (MySQL 호환 idempotent)
+    const ensureColumn = async (column: string) => {
+      const [col] = await pool.query<DBRow[]>(
+        `SELECT COUNT(*) AS cnt FROM information_schema.columns
+         WHERE table_schema = DATABASE() AND table_name = 'fee_policy' AND column_name = ?`,
+        [column]
+      );
+      if ((col[0]?.cnt as number) === 0) {
+        await pool.query(`ALTER TABLE fee_policy ADD COLUMN ${column} INT NOT NULL DEFAULT 0`);
+      }
+    };
+    await ensureColumn('couple_discount_rate');
+    await ensureColumn('officer_discount_rate');
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS fee_record (
@@ -109,11 +115,14 @@ export const feeModel = {
     kakao_pay_link?: string | null;
     description?: string | null;
     couple_discount_rate?: number | null;
+    officer_discount_rate?: number | null;
   }) {
-    const coupleRate = Math.max(0, Math.min(100, Number(data.couple_discount_rate) || 0));
+    const clamp = (v: any) => Math.max(0, Math.min(100, Number(v) || 0));
+    const coupleRate = clamp(data.couple_discount_rate);
+    const officerRate = clamp(data.officer_discount_rate);
     await pool.query(
-      `INSERT INTO fee_policy (club_id, amount, bank_name, account_number, account_holder, kakao_pay_link, description, couple_discount_rate)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO fee_policy (club_id, amount, bank_name, account_number, account_holder, kakao_pay_link, description, couple_discount_rate, officer_discount_rate)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE
          amount = VALUES(amount),
          bank_name = VALUES(bank_name),
@@ -121,7 +130,8 @@ export const feeModel = {
          account_holder = VALUES(account_holder),
          kakao_pay_link = VALUES(kakao_pay_link),
          description = VALUES(description),
-         couple_discount_rate = VALUES(couple_discount_rate)`,
+         couple_discount_rate = VALUES(couple_discount_rate),
+         officer_discount_rate = VALUES(officer_discount_rate)`,
       [
         clubId,
         data.amount,
@@ -131,6 +141,7 @@ export const feeModel = {
         data.kakao_pay_link || null,
         data.description || null,
         coupleRate,
+        officerRate,
       ]
     );
 
@@ -199,7 +210,7 @@ export const feeModel = {
 
   async getAllMembers(clubId: number) {
     const [rows] = await pool.query<DBRow[]>(
-      'SELECT id, name, profile_image, spouse_id FROM member WHERE club_id = ? AND is_active = TRUE ORDER BY name',
+      'SELECT id, name, profile_image, spouse_id, role FROM member WHERE club_id = ? AND is_active = TRUE ORDER BY name',
       [clubId]
     );
     return rows;

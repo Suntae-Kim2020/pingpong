@@ -499,6 +499,7 @@ export interface FeePolicy {
   kakao_pay_link: string | null;
   description: string | null;
   couple_discount_rate: number; // 부부 감면 비율 (%)
+  officer_discount_rate: number; // 임원진 감면 비율 (%)
 }
 
 export interface FeeRecord {

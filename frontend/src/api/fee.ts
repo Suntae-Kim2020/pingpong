@@ -13,6 +13,7 @@ export const feeApi = {
     kakao_pay_link?: string | null;
     description?: string | null;
     couple_discount_rate?: number;
+    officer_discount_rate?: number;
   }) =>
     api.put<FeePolicy>(`/clubs/${clubId}/fees/policy`, data),
 
@@ -20,7 +21,7 @@ export const feeApi = {
     api.get<{
       records: FeeRecord[];
       stats: { total: number; paid: number; unpaid: number; rate: number };
-      allMembers: { id: number; name: string; profile_image: string | null; spouse_id: number | null }[];
+      allMembers: { id: number; name: string; profile_image: string | null; spouse_id: number | null; role: 'leader' | 'admin' | 'member' }[];
     }>(`/clubs/${clubId}/fees?year=${year}&month=${month}`),
 
   markPaid: (clubId: number, data: {

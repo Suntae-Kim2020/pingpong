@@ -17,7 +17,7 @@ export const feeController = {
   async upsertPolicy(req: Request, res: Response, next: NextFunction) {
     try {
       const clubId = parseInt(req.params.clubId);
-      const { amount, bank_name, account_number, account_holder, kakao_pay_link, description, couple_discount_rate } = req.body;
+      const { amount, bank_name, account_number, account_holder, kakao_pay_link, description, couple_discount_rate, officer_discount_rate } = req.body;
 
       if (amount === undefined || amount === null) {
         throw new AppError('amount is required', 400);
@@ -31,6 +31,7 @@ export const feeController = {
         kakao_pay_link,
         description,
         couple_discount_rate,
+        officer_discount_rate,
       });
 
       res.json(policy);

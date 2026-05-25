@@ -107,6 +107,14 @@ export default function FeeManagePage() {
 // 탭1: 월회비 (기존 기능 유지)
 // =============================================
 
+type FeeMember = {
+  id: number;
+  name: string;
+  profile_image: string | null;
+  spouse_id: number | null;
+  role: 'leader' | 'admin' | 'member';
+};
+
 function MonthlyFeeTab({ clubId, isAdmin }: { clubId: number; isAdmin: boolean }) {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -114,7 +122,7 @@ function MonthlyFeeTab({ clubId, isAdmin }: { clubId: number; isAdmin: boolean }
   const [policy, setPolicy] = useState<FeePolicy | null>(null);
   const [records, setRecords] = useState<FeeRecord[]>([]);
   const [stats, setStats] = useState({ total: 0, paid: 0, unpaid: 0, rate: 0 });
-  const [allMembers, setAllMembers] = useState<{ id: number; name: string; profile_image: string | null; spouse_id: number | null }[]>([]);
+  const [allMembers, setAllMembers] = useState<FeeMember[]>([]);
   const [tab, setTab] = useState<SubTab>('unpaid');
   const [showPolicyForm, setShowPolicyForm] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -127,17 +135,26 @@ function MonthlyFeeTab({ clubId, isAdmin }: { clubId: number; isAdmin: boolean }
   const [formKakaoPayLink, setFormKakaoPayLink] = useState('');
   const [formDescription, setFormDescription] = useState('');
   const [formCoupleRate, setFormCoupleRate] = useState(0);
+  const [formOfficerRate, setFormOfficerRate] = useState(0);
 
-  // 부부 회비 계산: 배우자가 같은 클럽 활성 회원이고 감면율이 있으면 각자 감면 적용
+  // 회비 감면 계산: 부부 / 임원진(leader·admin) 항목 중 더 높은 비율만 적용
   const memberIdSet = new Set(allMembers.map((m) => m.id));
   const coupleRate = policy?.couple_discount_rate ?? 0;
-  const isCouple = (spouseId: number | null | undefined) =>
-    !!spouseId && memberIdSet.has(spouseId) && coupleRate > 0;
-  const feeFor = (spouseId: number | null | undefined) => {
+  const officerRate = policy?.officer_discount_rate ?? 0;
+  const isCouple = (m: FeeMember) => !!m.spouse_id && memberIdSet.has(m.spouse_id);
+  const isOfficer = (m: FeeMember) => m.role === 'leader' || m.role === 'admin';
+  // 적용 감면 (라벨, 비율) — 해당 항목 중 최댓값
+  const appliedDiscount = (m: FeeMember): { label: string; rate: number } | null => {
+    const candidates: { label: string; rate: number }[] = [];
+    if (isCouple(m) && coupleRate > 0) candidates.push({ label: '부부', rate: coupleRate });
+    if (isOfficer(m) && officerRate > 0) candidates.push({ label: '임원진', rate: officerRate });
+    if (candidates.length === 0) return null;
+    return candidates.reduce((a, b) => (b.rate > a.rate ? b : a));
+  };
+  const feeFor = (m: FeeMember) => {
     if (!policy) return 0;
-    return isCouple(spouseId)
-      ? Math.round((policy.amount * (100 - coupleRate)) / 100)
-      : policy.amount;
+    const d = appliedDiscount(m);
+    return d ? Math.round((policy.amount * (100 - d.rate)) / 100) : policy.amount;
   };
 
   const fetchData = useCallback(async () => {
@@ -170,6 +187,7 @@ function MonthlyFeeTab({ clubId, isAdmin }: { clubId: number; isAdmin: boolean }
       setFormKakaoPayLink(policy.kakao_pay_link || '');
       setFormDescription(policy.description || '');
       setFormCoupleRate(policy.couple_discount_rate || 0);
+      setFormOfficerRate(policy.officer_discount_rate || 0);
     }
     setShowPolicyForm(true);
   };
@@ -184,6 +202,7 @@ function MonthlyFeeTab({ clubId, isAdmin }: { clubId: number; isAdmin: boolean }
         kakao_pay_link: formKakaoPayLink || null,
         description: formDescription || null,
         couple_discount_rate: formCoupleRate,
+        officer_discount_rate: formOfficerRate,
       });
       setPolicy(result);
       setShowPolicyForm(false);
@@ -192,10 +211,10 @@ function MonthlyFeeTab({ clubId, isAdmin }: { clubId: number; isAdmin: boolean }
     }
   };
 
-  const handleMarkPaid = async (memberId: number, spouseId: number | null) => {
+  const handleMarkPaid = async (m: FeeMember) => {
     if (!policy) return;
     try {
-      await feeApi.markPaid(clubId, { memberId, year, month, amount: feeFor(spouseId) });
+      await feeApi.markPaid(clubId, { memberId: m.id, year, month, amount: feeFor(m) });
       fetchData();
     } catch (err: any) {
       alert(err.message || '납부 처리 실패');
@@ -260,10 +279,11 @@ function MonthlyFeeTab({ clubId, isAdmin }: { clubId: number; isAdmin: boolean }
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <div style={{ fontSize: '16px', fontWeight: '600', color: '#333' }}>
               월 회비: {policy.amount.toLocaleString()}원
-              {coupleRate > 0 && (
-                <span style={{ fontSize: '12px', color: '#e91e63', marginLeft: '8px', fontWeight: '500' }}>
-                  부부 -{coupleRate}% ({Math.round((policy.amount * (100 - coupleRate)) / 100).toLocaleString()}원)
-                </span>
+              {(coupleRate > 0 || officerRate > 0) && (
+                <div style={{ fontSize: '12px', color: '#e91e63', marginTop: '4px', fontWeight: '500' }}>
+                  {coupleRate > 0 && <span style={{ marginRight: '10px' }}>부부 -{coupleRate}%</span>}
+                  {officerRate > 0 && <span>임원진 -{officerRate}%</span>}
+                </div>
               )}
             </div>
             {isAdmin && (
@@ -329,14 +349,31 @@ function MonthlyFeeTab({ clubId, isAdmin }: { clubId: number; isAdmin: boolean }
               <label style={labelStyle}>월 회비 (원) *</label>
               <input type="text" inputMode="numeric" value={formAmount.toLocaleString()} onFocus={(e) => e.target.select()} onChange={(e) => setFormAmount(parseInt(e.target.value.replace(/,/g, '')) || 0)} style={inputStyle} />
             </div>
-            <div>
-              <label style={labelStyle}>부부 감면 비율 (%)</label>
-              <input type="text" inputMode="numeric" value={formCoupleRate} onFocus={(e) => e.target.select()} onChange={(e) => setFormCoupleRate(Math.max(0, Math.min(100, parseInt(e.target.value.replace(/[^0-9]/g, '')) || 0)))} style={inputStyle} placeholder="예: 20 (부부 각자 20% 감면)" />
-              {formCoupleRate > 0 && formAmount > 0 && (
-                <div style={{ fontSize: '12px', color: '#e91e63', marginTop: '4px' }}>
-                  부부는 1인당 {Math.round((formAmount * (100 - formCoupleRate)) / 100).toLocaleString()}원
+            <div style={{ border: '1px solid #f0d4dd', borderRadius: '8px', padding: '12px', background: '#fdf5f8' }}>
+              <label style={{ ...labelStyle, color: '#c2185b', marginBottom: '8px', display: 'block' }}>회비 감면 항목 (%)</label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={{ fontSize: '13px', color: '#555' }}>부부</label>
+                  <input type="text" inputMode="numeric" value={formCoupleRate} onFocus={(e) => e.target.select()} onChange={(e) => setFormCoupleRate(Math.max(0, Math.min(100, parseInt(e.target.value.replace(/[^0-9]/g, '')) || 0)))} style={inputStyle} placeholder="예: 20" />
+                  {formCoupleRate > 0 && formAmount > 0 && (
+                    <div style={{ fontSize: '12px', color: '#e91e63', marginTop: '4px' }}>
+                      1인당 {Math.round((formAmount * (100 - formCoupleRate)) / 100).toLocaleString()}원
+                    </div>
+                  )}
                 </div>
-              )}
+                <div>
+                  <label style={{ fontSize: '13px', color: '#555' }}>임원진(관리자)</label>
+                  <input type="text" inputMode="numeric" value={formOfficerRate} onFocus={(e) => e.target.select()} onChange={(e) => setFormOfficerRate(Math.max(0, Math.min(100, parseInt(e.target.value.replace(/[^0-9]/g, '')) || 0)))} style={inputStyle} placeholder="예: 50" />
+                  {formOfficerRate > 0 && formAmount > 0 && (
+                    <div style={{ fontSize: '12px', color: '#e91e63', marginTop: '4px' }}>
+                      1인당 {Math.round((formAmount * (100 - formOfficerRate)) / 100).toLocaleString()}원
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div style={{ fontSize: '11px', color: '#999', marginTop: '8px' }}>
+                * 부부이면서 임원진이면 더 높은 감면율만 적용됩니다.
+              </div>
             </div>
             <div>
               <label style={labelStyle}>은행명</label>
@@ -457,8 +494,8 @@ function MonthlyFeeTab({ clubId, isAdmin }: { clubId: number; isAdmin: boolean }
               </div>
             );
           } else {
-            const m = item as { id: number; name: string; profile_image: string | null; spouse_id: number | null; type: 'unpaid' };
-            const couple = isCouple(m.spouse_id);
+            const m = item as FeeMember & { type: 'unpaid' };
+            const discount = appliedDiscount(m);
             return (
               <div key={`unpaid-${m.id}`} style={rowStyle}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
@@ -470,22 +507,22 @@ function MonthlyFeeTab({ clubId, isAdmin }: { clubId: number; isAdmin: boolean }
                   <div>
                     <div style={{ fontSize: '14px', fontWeight: '500', color: '#333' }}>
                       {m.name}
-                      {couple && (
+                      {discount && (
                         <span style={{
                           marginLeft: '6px', fontSize: '11px', color: '#e91e63',
                           background: '#fce4ec', padding: '1px 6px', borderRadius: '8px',
-                        }}>부부 -{coupleRate}%</span>
+                        }}>{discount.label} -{discount.rate}%</span>
                       )}
                     </div>
-                    <div style={{ fontSize: '12px', color: couple ? '#e91e63' : '#999' }}>
-                      {policy ? `${feeFor(m.spouse_id).toLocaleString()}원` : '미납'}
+                    <div style={{ fontSize: '12px', color: discount ? '#e91e63' : '#999' }}>
+                      {policy ? `${feeFor(m).toLocaleString()}원` : '미납'}
                     </div>
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span style={unpaidBadgeStyle}>미납</span>
                   {isAdmin && policy && (
-                    <button onClick={() => handleMarkPaid(m.id, m.spouse_id)} style={confirmBtnStyle}>납부확인</button>
+                    <button onClick={() => handleMarkPaid(m)} style={confirmBtnStyle}>납부확인</button>
                   )}
                 </div>
               </div>
