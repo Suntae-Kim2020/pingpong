@@ -1330,20 +1330,17 @@ function DepositUploadModal({
 
   const goPreview = () => setStep('preview');
 
-  // 미리보기 진입 시 자동매칭 초기화 (유일 후보면 자동 선택)
+  // 미리보기 진입 또는 열 매핑 변경 시 자동매칭 재계산 (유일 후보면 자동 선택)
   useEffect(() => {
     if (step !== 'preview') return;
-    setSel((prev) => {
-      if (Object.keys(prev).length > 0) return prev;
-      const init: Record<number, number | ''> = {};
-      deposits.forEach((d) => {
-        const c = candidatesFor(d);
-        init[d.idx] = c.length === 1 ? c[0].id : '';
-      });
-      return init;
+    const init: Record<number, number | ''> = {};
+    deposits.forEach((d) => {
+      const c = candidatesFor(d);
+      init[d.idx] = c.length === 1 ? c[0].id : '';
     });
+    setSel(init);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, rows, amountCol, nameCol]);
+  }, [step, rows, amountCol, nameCol, dateCol, headerRowIdx]);
 
   const selectedIds = Array.from(new Set(Object.values(sel).filter((v): v is number => typeof v === 'number')));
 
@@ -1390,6 +1387,19 @@ function DepositUploadModal({
           <div>
             <div style={{ fontSize: '13px', color: '#666', marginBottom: '10px' }}>
               입금 {deposits.length}건 중 <b style={{ color: '#1976d2' }}>{selectedIds.length}건</b> 매칭됨. 확인 후 일괄 납부확인됩니다.
+            </div>
+            <div style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              background: '#f5f7fa', borderRadius: '6px', padding: '8px 10px', marginBottom: '10px', fontSize: '12px', color: '#555',
+            }}>
+              <span>
+                입금액=<b>{headers[amountCol] || '?'}</b> · 입금자=<b>{headers[nameCol] || '?'}</b>
+                {dateCol >= 0 && <> · 일자=<b>{headers[dateCol]}</b></>}
+              </span>
+              <button onClick={() => setStep('map')} style={{
+                background: '#fff', border: '1px solid #c5cae9', color: '#3949ab',
+                padding: '4px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', whiteSpace: 'nowrap',
+              }}>열 매핑 변경</button>
             </div>
             <div style={{ maxHeight: '46vh', overflowY: 'auto', border: '1px solid #eee', borderRadius: '8px' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
