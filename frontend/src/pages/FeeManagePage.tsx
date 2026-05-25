@@ -539,6 +539,7 @@ function MonthlyFeeTab({ clubId, isAdmin }: { clubId: number; isAdmin: boolean }
 
       {showUpload && policy && (
         <DepositUploadModal
+          clubId={clubId}
           year={year}
           month={month}
           unpaidMembers={unpaidMembers}
@@ -1248,8 +1249,9 @@ const DATE_ALIASES = ['거래일시', '거래일자', '거래일', '일자', '�
 const normName = (s: string) => (s || '').replace(/\s/g, '');
 
 function DepositUploadModal({
-  year, month, unpaidMembers, feeFor, appliedDiscount, onClose, onConfirm,
+  clubId, year, month, unpaidMembers, feeFor, appliedDiscount, onClose, onConfirm,
 }: {
+  clubId: number;
   year: number;
   month: number;
   unpaidMembers: FeeMember[];
@@ -1267,8 +1269,11 @@ function DepositUploadModal({
   const [step, setStep] = useState<'select' | 'map' | 'preview'>('select');
   const [sel, setSel] = useState<Record<number, number | ''>>({});
   const [error, setError] = useState('');
+  const [signature, setSignature] = useState('');
+  const [savedApplied, setSavedApplied] = useState(false);
 
   const headers = rows[headerRowIdx] || [];
+  const computeSig = (hdr: string[]) => hdr.map((h) => h.replace(/\s/g, '')).filter(Boolean).join('|').slice(0, 500);
 
   const handleFile = async (file: File) => {
     try {
@@ -1302,10 +1307,35 @@ function DepositUploadModal({
       const aCol = findCol(AMOUNT_ALIASES, nCol);
       const dCol = findCol(DATE_ALIASES, -1);
       setHeaderRowIdx(hIdx);
-      setNameCol(nCol);
-      setAmountCol(aCol);
-      setDateCol(dCol);
-      setStep(aCol >= 0 && nCol >= 0 ? 'preview' : 'map');
+
+      // 저장된 양식 매핑이 있으면 우선 적용 (동호회 공통)
+      const sig = computeSig(allRows[hIdx]);
+      setSignature(sig);
+      const norm = (s: string) => s.replace(/\s/g, '');
+      const findByName = (name: string) => allRows[hIdx].findIndex((h) => norm(h) === norm(name));
+      let applied = false;
+      try {
+        const saved = await feeApi.getImportMapping(clubId, sig);
+        if (saved) {
+          const ac = findByName(saved.amount_header);
+          const nc = findByName(saved.name_header);
+          const dc = saved.date_header ? findByName(saved.date_header) : -1;
+          if (ac >= 0 && nc >= 0) {
+            setAmountCol(ac); setNameCol(nc); setDateCol(dc);
+            setSavedApplied(true);
+            setStep('preview');
+            applied = true;
+          }
+        }
+      } catch { /* 매핑 조회 실패 시 자동인식으로 진행 */ }
+
+      if (!applied) {
+        setNameCol(nCol);
+        setAmountCol(aCol);
+        setDateCol(dCol);
+        setSavedApplied(false);
+        setStep(aCol >= 0 && nCol >= 0 ? 'preview' : 'map');
+      }
     } catch {
       setError('파일을 읽을 수 없습니다. 엑셀(.xlsx) 또는 CSV 파일인지 확인해주세요.');
     }
@@ -1343,6 +1373,21 @@ function DepositUploadModal({
   }, [step, rows, amountCol, nameCol, dateCol, headerRowIdx]);
 
   const selectedIds = Array.from(new Set(Object.values(sel).filter((v): v is number => typeof v === 'number')));
+
+  // 확인 시 이 양식의 컬럼 매핑을 학습 저장 (다음부터 같은 양식 자동 적용)
+  const handleConfirm = async () => {
+    if (amountCol >= 0 && nameCol >= 0 && signature) {
+      try {
+        await feeApi.saveImportMapping(clubId, {
+          signature,
+          amount_header: headers[amountCol] || '',
+          name_header: headers[nameCol] || '',
+          date_header: dateCol >= 0 ? (headers[dateCol] || null) : null,
+        });
+      } catch { /* 매핑 저장 실패는 무시 */ }
+    }
+    onConfirm(selectedIds);
+  };
 
   const cellStyle: React.CSSProperties = { padding: '6px 8px', fontSize: '13px', borderBottom: '1px solid #eee', textAlign: 'left' };
 
@@ -1395,6 +1440,7 @@ function DepositUploadModal({
               <span>
                 입금액=<b>{headers[amountCol] || '?'}</b> · 입금자=<b>{headers[nameCol] || '?'}</b>
                 {dateCol >= 0 && <> · 일자=<b>{headers[dateCol]}</b></>}
+                {savedApplied && <span style={{ color: '#2e7d32', marginLeft: '6px' }}>· 저장된 매핑 적용됨</span>}
               </span>
               <button onClick={() => setStep('map')} style={{
                 background: '#fff', border: '1px solid #c5cae9', color: '#3949ab',
@@ -1438,7 +1484,7 @@ function DepositUploadModal({
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
               <button onClick={onClose} style={cancelBtnStyle}>취소</button>
-              <button onClick={() => onConfirm(selectedIds)} disabled={selectedIds.length === 0}
+              <button onClick={handleConfirm} disabled={selectedIds.length === 0}
                 style={{ ...saveBtnStyle, opacity: selectedIds.length === 0 ? 0.5 : 1 }}>
                 {selectedIds.length}건 납부확인
               </button>

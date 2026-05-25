@@ -40,6 +40,35 @@ export const feeController = {
     }
   },
 
+  // 거래내역 양식 컬럼 매핑 조회 (양식 지문 기준, 동호회 공통)
+  async getImportMapping(req: Request, res: Response, next: NextFunction) {
+    try {
+      const signature = req.query.signature as string | undefined;
+      if (!signature) {
+        res.json(null);
+        return;
+      }
+      const mapping = await feeModel.getImportMapping(signature);
+      res.json(mapping);
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  // 거래내역 양식 컬럼 매핑 저장/갱신
+  async saveImportMapping(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { signature, amount_header, name_header, date_header } = req.body;
+      if (!signature || !amount_header || !name_header) {
+        throw new AppError('signature, amount_header, name_header are required', 400);
+      }
+      await feeModel.saveImportMapping(signature, amount_header, name_header, date_header || null);
+      res.json({ success: true });
+    } catch (error) {
+      next(error);
+    }
+  },
+
   async getRecords(req: Request, res: Response, next: NextFunction) {
     try {
       const clubId = parseInt(req.params.clubId);

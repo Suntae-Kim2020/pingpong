@@ -17,6 +17,15 @@ export const feeApi = {
   }) =>
     api.put<FeePolicy>(`/clubs/${clubId}/fees/policy`, data),
 
+  // 거래내역 양식 컬럼 매핑 (학습/재사용, 동호회 공통)
+  getImportMapping: (clubId: number, signature: string) =>
+    api.get<{ amount_header: string; name_header: string; date_header: string | null } | null>(
+      `/clubs/${clubId}/fees/import-mapping?signature=${encodeURIComponent(signature)}`
+    ),
+
+  saveImportMapping: (clubId: number, data: { signature: string; amount_header: string; name_header: string; date_header: string | null }) =>
+    api.put<{ success: boolean }>(`/clubs/${clubId}/fees/import-mapping`, data),
+
   getRecords: (clubId: number, year: number, month: number) =>
     api.get<{
       records: FeeRecord[];

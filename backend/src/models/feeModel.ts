@@ -97,6 +97,41 @@ export const feeModel = {
         FOREIGN KEY (club_id) REFERENCES club(id) ON DELETE CASCADE
       )
     `);
+
+    // 거래내역 엑셀 컬럼 매핑 학습 (양식 지문 기준, 동호회 공통)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS fee_import_mapping (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        signature VARCHAR(512) NOT NULL UNIQUE,
+        amount_header VARCHAR(150) NOT NULL,
+        name_header VARCHAR(150) NOT NULL,
+        date_header VARCHAR(150) DEFAULT NULL,
+        used_count INT NOT NULL DEFAULT 1,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )
+    `);
+  },
+
+  // 거래내역 양식 컬럼 매핑 조회/저장
+  async getImportMapping(signature: string) {
+    const [rows] = await pool.query<DBRow[]>(
+      'SELECT amount_header, name_header, date_header FROM fee_import_mapping WHERE signature = ?',
+      [signature]
+    );
+    return rows.length > 0 ? rows[0] : null;
+  },
+
+  async saveImportMapping(signature: string, amountHeader: string, nameHeader: string, dateHeader: string | null) {
+    await pool.query(
+      `INSERT INTO fee_import_mapping (signature, amount_header, name_header, date_header)
+       VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         amount_header = VALUES(amount_header),
+         name_header = VALUES(name_header),
+         date_header = VALUES(date_header),
+         used_count = used_count + 1`,
+      [signature, amountHeader, nameHeader, dateHeader || null]
+    );
   },
 
   async getPolicy(clubId: number) {
