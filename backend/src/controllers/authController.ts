@@ -1,7 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import axios from 'axios';
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
 import { userModel } from '../models/userModel';
+import { memberModel } from '../models/memberModel';
+import { membershipModel } from '../models/clubModel';
 import { AppError } from '../middleware/errorHandler';
 import type { SocialProvider, SystemRole } from '../types';
 
@@ -13,17 +16,17 @@ const OAUTH_CONFIG = {
   kakao: {
     clientId: process.env.KAKAO_CLIENT_ID || '',
     clientSecret: process.env.KAKAO_CLIENT_SECRET || '',
-    redirectUri: process.env.KAKAO_REDIRECT_URI || 'http://localhost:5173/auth/kakao/callback',
+    redirectUri: process.env.KAKAO_REDIRECT_URI || 'http://localhost:3000/auth/kakao/callback',
   },
   naver: {
     clientId: process.env.NAVER_CLIENT_ID || '',
     clientSecret: process.env.NAVER_CLIENT_SECRET || '',
-    redirectUri: process.env.NAVER_REDIRECT_URI || 'http://localhost:5173/auth/naver/callback',
+    redirectUri: process.env.NAVER_REDIRECT_URI || 'http://localhost:3000/auth/naver/callback',
   },
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID || '',
     clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
-    redirectUri: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:5173/auth/google/callback',
+    redirectUri: process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/auth/google/callback',
   },
 };
 
@@ -42,6 +45,87 @@ export const verifyToken = (token: string): { userId: number; role?: SystemRole 
 };
 
 export const authController = {
+  // 회원가입 (로컬)
+  async signup(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { username, password, name } = req.body;
+
+      // 유효성 검사
+      if (!username || !password || !name) {
+        throw new AppError('아이디, 패스워드, 이름은 필수입니다.', 400);
+      }
+      if (!/^[a-zA-Z0-9]{4,20}$/.test(username)) {
+        throw new AppError('아이디는 영문+숫자 4~20자여야 합니다.', 400);
+      }
+      if (password.length < 6) {
+        throw new AppError('패스워드는 6자 이상이어야 합니다.', 400);
+      }
+
+      // 중복 체크
+      const existing = await userModel.findByUsername(username);
+      if (existing) {
+        throw new AppError('이미 사용 중인 아이디입니다.', 409);
+      }
+
+      const user = await userModel.createLocal({ username, password, name });
+      const token = generateToken(user.id, user.role || 'user');
+
+      res.status(201).json({
+        token,
+        user: {
+          id: user.id,
+          name: user.name,
+          nickname: user.nickname,
+          email: user.email,
+          profile_image: user.profile_image,
+          provider: user.provider,
+          role: user.role || 'user',
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  // 로그인 (로컬)
+  async loginLocal(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { username, password } = req.body;
+
+      if (!username || !password) {
+        throw new AppError('아이디와 패스워드를 입력해주세요.', 400);
+      }
+
+      const user = await userModel.findByUsername(username);
+      if (!user || !user.password) {
+        throw new AppError('아이디 또는 패스워드가 올바르지 않습니다.', 401);
+      }
+
+      const isMatch = await bcrypt.compare(password, user.password);
+      if (!isMatch) {
+        throw new AppError('아이디 또는 패스워드가 올바르지 않습니다.', 401);
+      }
+
+      await userModel.updateLastLogin(user.id);
+      const token = generateToken(user.id, user.role || 'user');
+
+      res.json({
+        token,
+        user: {
+          id: user.id,
+          name: user.name,
+          nickname: user.nickname,
+          email: user.email,
+          profile_image: user.profile_image,
+          provider: user.provider,
+          role: user.role || 'user',
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
   // OAuth 로그인 URL 생성
   async getLoginUrl(req: Request, res: Response, next: NextFunction) {
     try {
@@ -172,6 +256,73 @@ export const authController = {
   // 로그아웃 (클라이언트에서 토큰 삭제)
   async logout(req: Request, res: Response) {
     res.json({ success: true, message: 'Logged out successfully' });
+  },
+
+  // 내 프로필 수정
+  async updateMe(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = req.auth!.userId;
+      const { name, nickname, phone, birth_year, gender } = req.body;
+
+      await userModel.update(userId, { name, nickname, phone, birth_year, gender });
+
+      // 연결된 member 동기화
+      const memberships = await membershipModel.findByUserId(userId);
+      for (const ms of memberships) {
+        if (ms.member_id && ms.status === 'approved') {
+          const syncData: Record<string, any> = {};
+          // member.name/birth_year/gender 는 NOT NULL 이므로 null 로는 덮어쓰지 않는다
+          if (name !== undefined && name !== null) syncData.name = name;
+          if (birth_year !== undefined && birth_year !== null) syncData.birth_year = birth_year;
+          if (gender !== undefined && gender !== null) syncData.gender = gender;
+          if (phone !== undefined) syncData.phone = phone;
+          if (Object.keys(syncData).length > 0) {
+            await memberModel.update(ms.member_id, syncData);
+          }
+        }
+      }
+
+      const user = await userModel.findById(userId);
+      res.json({
+        id: user!.id,
+        name: user!.name,
+        nickname: user!.nickname,
+        email: user!.email,
+        profile_image: user!.profile_image,
+        provider: user!.provider,
+        phone: user!.phone,
+        birth_year: user!.birth_year,
+        gender: user!.gender,
+        role: user!.role || 'user',
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  // 내 프로필 사진 업로드
+  async uploadMyPhoto(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = req.auth!.userId;
+      if (!req.file) {
+        throw new AppError('파일이 없습니다.', 400);
+      }
+
+      const imageUrl = `/api/uploads/${req.file.filename}`;
+      await userModel.update(userId, { profile_image: imageUrl });
+
+      // 연결된 member 프로필 사진도 동기화
+      const memberships = await membershipModel.findByUserId(userId);
+      for (const ms of memberships) {
+        if (ms.member_id && ms.status === 'approved') {
+          await memberModel.update(ms.member_id, { profile_image: imageUrl } as any);
+        }
+      }
+
+      res.json({ profile_image: imageUrl });
+    } catch (error) {
+      next(error);
+    }
   },
 };
 
