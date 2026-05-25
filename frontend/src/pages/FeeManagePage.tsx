@@ -125,6 +125,7 @@ function MonthlyFeeTab({ clubId, isAdmin }: { clubId: number; isAdmin: boolean }
   const [allMembers, setAllMembers] = useState<FeeMember[]>([]);
   const [tab, setTab] = useState<SubTab>('unpaid');
   const [showPolicyForm, setShowPolicyForm] = useState(false);
+  const [showUpload, setShowUpload] = useState(false);
   const [loading, setLoading] = useState(true);
   const [copyMsg, setCopyMsg] = useState('');
 
@@ -418,8 +419,13 @@ function MonthlyFeeTab({ clubId, isAdmin }: { clubId: number; isAdmin: boolean }
         <StatBox label="납부율" value={`${stats.rate}%`} color="#1976d2" />
       </div>
 
-      {/* Excel Download */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
+      {/* Excel Download / 거래내역 업로드 */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginBottom: '12px' }}>
+        {isAdmin && policy && (
+          <button onClick={() => setShowUpload(true)} style={{ ...excelBtnStyle, background: '#5c6bc0' }}>
+            거래내역 업로드
+          </button>
+        )}
         <button
           onClick={() => {
             const rows = allMembers.map((m) => {
@@ -530,6 +536,28 @@ function MonthlyFeeTab({ clubId, isAdmin }: { clubId: number; isAdmin: boolean }
           }
         })}
       </div>
+
+      {showUpload && policy && (
+        <DepositUploadModal
+          year={year}
+          month={month}
+          unpaidMembers={unpaidMembers}
+          feeFor={feeFor}
+          appliedDiscount={appliedDiscount}
+          onClose={() => setShowUpload(false)}
+          onConfirm={async (memberIds) => {
+            for (const mid of memberIds) {
+              const m = unpaidMembers.find((x) => x.id === mid);
+              if (!m) continue;
+              try {
+                await feeApi.markPaid(clubId, { memberId: m.id, year, month, amount: feeFor(m), memo: '거래내역 자동확인' });
+              } catch { /* 이미 납부 등은 무시 */ }
+            }
+            setShowUpload(false);
+            fetchData();
+          }}
+        />
+      )}
     </>
   );
 }
@@ -1207,6 +1235,220 @@ function TransactionTab({ clubId, isAdmin }: { clubId: number; isAdmin: boolean 
         ))}
       </div>
     </>
+  );
+}
+
+// =============================================
+// 거래내역 업로드 → 자동 납부확인
+// =============================================
+
+const AMOUNT_ALIASES = ['입금액', '입금금액', '맡기신금액', '받은금액', '입금'];
+const NAME_ALIASES = ['입금자', '보낸분', '보낸사람', '의뢰인', '내용', '적요', '기재내용', '거래기록사항', '받는분/보내는분'];
+const DATE_ALIASES = ['거래일시', '거래일자', '거래일', '일자', '날짜'];
+const normName = (s: string) => (s || '').replace(/\s/g, '');
+
+function DepositUploadModal({
+  year, month, unpaidMembers, feeFor, appliedDiscount, onClose, onConfirm,
+}: {
+  year: number;
+  month: number;
+  unpaidMembers: FeeMember[];
+  feeFor: (m: FeeMember) => number;
+  appliedDiscount: (m: FeeMember) => { label: string; rate: number } | null;
+  onClose: () => void;
+  onConfirm: (memberIds: number[]) => void;
+}) {
+  const [rows, setRows] = useState<string[][]>([]);
+  const [fileName, setFileName] = useState('');
+  const [headerRowIdx, setHeaderRowIdx] = useState(0);
+  const [amountCol, setAmountCol] = useState(-1);
+  const [nameCol, setNameCol] = useState(-1);
+  const [dateCol, setDateCol] = useState(-1);
+  const [step, setStep] = useState<'select' | 'map' | 'preview'>('select');
+  const [sel, setSel] = useState<Record<number, number | ''>>({});
+  const [error, setError] = useState('');
+
+  const headers = rows[headerRowIdx] || [];
+
+  const handleFile = async (file: File) => {
+    try {
+      setError('');
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const aoa = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1, raw: false, defval: '' });
+      const allRows = aoa.map((r) => (r as any[]).map((c) => (c == null ? '' : String(c).trim())));
+      if (allRows.length === 0) { setError('빈 파일입니다.'); return; }
+      setRows(allRows);
+      setFileName(file.name);
+
+      // 헤더 행 탐색 (앞 15행 내에서 입금/입금자 키워드가 있는 행)
+      let hIdx = -1;
+      for (let i = 0; i < Math.min(allRows.length, 15); i++) {
+        const cells = allRows[i].map((c) => c.replace(/\s/g, ''));
+        const hasAmount = cells.some((c) => AMOUNT_ALIASES.some((a) => c.includes(a)));
+        const hasName = cells.some((c) => NAME_ALIASES.some((a) => c.includes(a)));
+        if (hasAmount && hasName) { hIdx = i; break; }
+        if (hIdx < 0 && (hasAmount || hasName)) hIdx = i;
+      }
+      if (hIdx < 0) hIdx = 0;
+      const hdr = allRows[hIdx].map((c) => c.replace(/\s/g, ''));
+      const findCol = (aliases: string[], exclude: number) => {
+        for (let j = 0; j < hdr.length; j++) if (j !== exclude && aliases.some((a) => hdr[j] === a)) return j;
+        for (let j = 0; j < hdr.length; j++) if (j !== exclude && aliases.some((a) => hdr[j].includes(a))) return j;
+        return -1;
+      };
+      const nCol = findCol(NAME_ALIASES, -1);
+      const aCol = findCol(AMOUNT_ALIASES, nCol);
+      const dCol = findCol(DATE_ALIASES, -1);
+      setHeaderRowIdx(hIdx);
+      setNameCol(nCol);
+      setAmountCol(aCol);
+      setDateCol(dCol);
+      setStep(aCol >= 0 && nCol >= 0 ? 'preview' : 'map');
+    } catch {
+      setError('파일을 읽을 수 없습니다. 엑셀(.xlsx) 또는 CSV 파일인지 확인해주세요.');
+    }
+  };
+
+  // 입금 내역 파싱
+  const deposits = (amountCol >= 0 && nameCol >= 0)
+    ? rows.slice(headerRowIdx + 1).map((r, i) => ({
+        idx: i,
+        amount: parseInt((r[amountCol] || '').replace(/[^0-9]/g, '')) || 0,
+        name: r[nameCol] || '',
+        date: dateCol >= 0 ? (r[dateCol] || '') : '',
+      })).filter((d) => d.amount > 0)
+    : [];
+
+  const candidatesFor = (d: { amount: number; name: string }) =>
+    unpaidMembers.filter((m) =>
+      normName(m.name).length > 0 &&
+      feeFor(m) === d.amount &&
+      (normName(d.name).includes(normName(m.name)) || normName(m.name).includes(normName(d.name)))
+    );
+
+  const goPreview = () => setStep('preview');
+
+  // 미리보기 진입 시 자동매칭 초기화 (유일 후보면 자동 선택)
+  useEffect(() => {
+    if (step !== 'preview') return;
+    setSel((prev) => {
+      if (Object.keys(prev).length > 0) return prev;
+      const init: Record<number, number | ''> = {};
+      deposits.forEach((d) => {
+        const c = candidatesFor(d);
+        init[d.idx] = c.length === 1 ? c[0].id : '';
+      });
+      return init;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, rows, amountCol, nameCol]);
+
+  const selectedIds = Array.from(new Set(Object.values(sel).filter((v): v is number => typeof v === 'number')));
+
+  const cellStyle: React.CSSProperties = { padding: '6px 8px', fontSize: '13px', borderBottom: '1px solid #eee', textAlign: 'left' };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 2100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }} onClick={onClose}>
+      <div style={{ background: 'white', borderRadius: '12px', padding: '20px', maxWidth: '640px', width: '100%', maxHeight: '90vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+          <h3 style={{ margin: 0, fontSize: '17px' }}>거래내역 업로드 — {year}년 {month}월</h3>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#999' }}>&times;</button>
+        </div>
+        {error && <div style={{ padding: '8px 12px', background: '#fff3f3', color: '#d32f2f', borderRadius: '6px', marginBottom: '12px', fontSize: '13px' }}>{error}</div>}
+
+        {step === 'select' && (
+          <div>
+            <p style={{ fontSize: '13px', color: '#666', lineHeight: 1.6 }}>
+              은행에서 받은 <b>거래내역 엑셀(.xlsx) 또는 CSV</b> 파일을 올려주세요.<br />
+              입금 건을 그 달 미납자와 <b>금액(감면 반영) + 입금자명</b>으로 자동 매칭합니다.
+            </p>
+            <input type="file" accept=".xlsx,.xls,.csv" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
+              style={{ marginTop: '12px', fontSize: '14px' }} />
+          </div>
+        )}
+
+        {step === 'map' && (
+          <div>
+            <p style={{ fontSize: '13px', color: '#666' }}>
+              열을 자동 인식하지 못했습니다. <b>{fileName}</b> 의 각 항목이 어느 열인지 지정해주세요.
+            </p>
+            <div style={{ display: 'grid', gap: '10px', marginTop: '8px' }}>
+              <ColMap label="입금액 열 *" headers={headers} value={amountCol} onChange={setAmountCol} />
+              <ColMap label="입금자명 열 *" headers={headers} value={nameCol} onChange={setNameCol} />
+              <ColMap label="거래일 열 (선택)" headers={headers} value={dateCol} onChange={setDateCol} />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
+              <button onClick={onClose} style={cancelBtnStyle}>취소</button>
+              <button onClick={goPreview} disabled={amountCol < 0 || nameCol < 0} style={{ ...saveBtnStyle, opacity: amountCol < 0 || nameCol < 0 ? 0.5 : 1 }}>다음</button>
+            </div>
+          </div>
+        )}
+
+        {step === 'preview' && (
+          <div>
+            <div style={{ fontSize: '13px', color: '#666', marginBottom: '10px' }}>
+              입금 {deposits.length}건 중 <b style={{ color: '#1976d2' }}>{selectedIds.length}건</b> 매칭됨. 확인 후 일괄 납부확인됩니다.
+            </div>
+            <div style={{ maxHeight: '46vh', overflowY: 'auto', border: '1px solid #eee', borderRadius: '8px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: '#f5f5f5' }}>
+                    <th style={cellStyle}>입금자</th>
+                    <th style={cellStyle}>금액</th>
+                    <th style={cellStyle}>매칭 회원</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {deposits.map((d) => {
+                    const cands = candidatesFor(d);
+                    return (
+                      <tr key={d.idx}>
+                        <td style={cellStyle}>{d.name || <span style={{ color: '#bbb' }}>(없음)</span>}<div style={{ fontSize: '11px', color: '#aaa' }}>{d.date}</div></td>
+                        <td style={cellStyle}>{d.amount.toLocaleString()}원</td>
+                        <td style={cellStyle}>
+                          <select value={sel[d.idx] ?? ''} onChange={(e) => setSel({ ...sel, [d.idx]: e.target.value ? parseInt(e.target.value) : '' })}
+                            style={{ ...inputStyle, padding: '4px 6px', borderColor: cands.length === 0 ? '#f0c0c0' : '#ddd' }}>
+                            <option value="">{cands.length === 0 ? '— 매칭 없음 —' : '— 선택 안함 —'}</option>
+                            {unpaidMembers.map((m) => {
+                              const disc = appliedDiscount(m);
+                              return <option key={m.id} value={m.id}>{m.name} ({feeFor(m).toLocaleString()}원{disc ? ` ·${disc.label}` : ''})</option>;
+                            })}
+                          </select>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {deposits.length === 0 && (
+                    <tr><td colSpan={3} style={{ ...cellStyle, textAlign: 'center', color: '#aaa', padding: '20px' }}>입금 내역을 찾지 못했습니다.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
+              <button onClick={onClose} style={cancelBtnStyle}>취소</button>
+              <button onClick={() => onConfirm(selectedIds)} disabled={selectedIds.length === 0}
+                style={{ ...saveBtnStyle, opacity: selectedIds.length === 0 ? 0.5 : 1 }}>
+                {selectedIds.length}건 납부확인
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ColMap({ label, headers, value, onChange }: { label: string; headers: string[]; value: number; onChange: (v: number) => void }) {
+  return (
+    <div>
+      <label style={labelStyle}>{label}</label>
+      <select value={value} onChange={(e) => onChange(parseInt(e.target.value))} style={inputStyle}>
+        <option value={-1}>— 선택 —</option>
+        {headers.map((h, i) => <option key={i} value={i}>{h || `(열 ${i + 1})`}</option>)}
+      </select>
+    </div>
   );
 }
 
