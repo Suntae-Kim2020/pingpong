@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { memberModel } from '../models/memberModel';
 import { clubModel, membershipModel } from '../models/clubModel';
+import { userModel } from '../models/userModel';
 import { AppError } from '../middleware/errorHandler';
 import pool from '../config/database';
 import type { DBRow, ClubMemberRole } from '../types';
@@ -184,6 +185,23 @@ export const memberController = {
 
       const imageUrl = `/api/uploads/${req.file.filename}`;
       await memberModel.update(id, { profile_image: imageUrl } as any);
+
+      // 이 member에 연결된 user가 있으면 user.profile_image 및 그 user의 다른 member들도 동기화
+      const [linkRows] = await pool.query<DBRow[]>(
+        `SELECT user_id FROM club_membership WHERE member_id = ? AND status = 'approved' LIMIT 1`,
+        [id]
+      );
+      const linkedUserId = linkRows[0]?.user_id as number | undefined;
+      if (linkedUserId) {
+        await userModel.update(linkedUserId, { profile_image: imageUrl });
+        const memberships = await membershipModel.findByUserId(linkedUserId);
+        for (const ms of memberships) {
+          if (ms.member_id && ms.status === 'approved' && ms.member_id !== id) {
+            await memberModel.update(ms.member_id, { profile_image: imageUrl } as any);
+          }
+        }
+      }
+
       res.json({ profile_image: imageUrl });
     } catch (error) {
       next(error);
